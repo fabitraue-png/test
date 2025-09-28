@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Handwerker-Terminvergabe</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Google Fonts für modernes Design -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/js-datepicker/dist/datepicker.min.css">
+    <style>
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            background: linear-gradient(120deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        .container {
+            background: white;
+            margin-top: 40px;
+            padding: 32px 28px 24px 28px;
+            border-radius: 18px;
+            box-shadow: 0 12px 36px rgba(0,0,0,0.18);
+            max-width: 420px;
+            width: 95%;
+        }
+        h1 {
+            color: #764ba2;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 700;
+            color: #667eea;
+        }
+        input[type="text"], input[type="email"], input[type="tel"] {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 16px;
+            border-radius: 8px;
+            border: 1px solid #d0d0d0;
+            font-size: 16px;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            border-color: #764ba2;
+            outline: none;
+        }
+        .step {
+            margin-bottom: 28px;
+        }
+        .datepicker {
+            margin: 14px auto 20px;
+        }
+        .slots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 20px;
+            margin-bottom: 16px;
+            justify-content: center;
+        }
+        .slot {
+            padding: 14px 22px;
+            border-radius: 10px;
+            border: none;
+            background: #e0e0e0;
+            color: #333;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+            box-shadow: 0 2px 8px rgba(76,71,109,0.08);
+        }
+        .slot.available:hover {
+            background: #764ba2;
+            color: #fff;
+        }
+        .slot.booked,
+        .slot.unavailable {
+            background: #ddd;
+            color: #aaa;
+            cursor: not-allowed;
+            text-decoration: line-through;
+        }
+        .confirmation {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-top: 18px;
+            margin-bottom: 14px;
+            text-align: center;
+            font-size: 18px;
+        }
+        .datepicker__month-day--disabled,
+        .datepicker__month-day--booked {
+            background: #eee !important;
+            color: #bbb !important;
+            cursor: not-allowed !important;
+        }
+        .datepicker__month-day--booked {
+            text-decoration: line-through;
+        }
+        .btn {
+            background: linear-gradient(120deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 17px;
+            padding: 12px 28px;
+            cursor: pointer;
+            margin-top: 6px;
+            margin-bottom: 10px;
+            transition: background 0.2s;
+            box-shadow: 0 2px 8px rgba(76,71,109,0.10);
+        }
+        .btn:disabled {
+            background: #bdbdbd;
+            cursor: not-allowed;
+        }
+        .step-title {
+            font-size: 18px;
+            color: #764ba2;
+            font-weight: 700;
+            margin-bottom: 8px;
+            margin-top: 18px;
+        }
+        .error {
+            color: #ff4444;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Terminvergabe – Handwerker</h1>
+        <div class="step" id="step1">
+            <div class="step-title">Ihre Kontaktdaten</div>
+            <div id="errorMsg" class="error" style="display:none;"></div>
+            <form id="userForm">
+                <label for="email">E-Mail*</label>
+                <input type="email" id="email" required autocomplete="email">
+                <label for="vorname">Vorname*</label>
+                <input type="text" id="vorname" required autocomplete="given-name">
+                <label for="nachname">Nachname*</label>
+                <input type="text" id="nachname" required autocomplete="family-name">
+                <label for="tel">Telefonnummer*</label>
+                <input type="tel" id="tel" required autocomplete="tel">
+                <button type="submit" class="btn">Weiter</button>
+            </form>
+        </div>
+
+        <div class="step" id="step2" style="display:none;">
+            <div class="step-title">Wählen Sie ein Datum</div>
+            <div id="datepicker"></div>
+        </div>
+
+        <div class="step" id="step3" style="display:none;">
+            <div class="step-title">Verfügbare Uhrzeiten</div>
+            <div class="slots" id="slots"></div>
+        </div>
+
+        <div class="confirmation" id="confirmation" style="display:none;"></div>
+    </div>
+    <script src="https://unpkg.com/js-datepicker"></script>
+    <script>
+        // Arbeitszeiten
+        const WORK_START = 8;
+        const WORK_END = 16;
+        const SLOT_COUNT = WORK_END - WORK_START + 1;
+
+        // Webhook-URL (Beispiel! Ersetze durch deine URL)
+        const WEBHOOK_URL = "https://hooks.zapier.com/hooks/catch/your-webhook-id/";
+
+        // Client-Daten speichern
+        let userData = {};
+
+        // Termine im LocalStorage (Demo)
+        function getBookedSlots() {
+            return JSON.parse(localStorage.getItem('bookedSlots') || '{}');
+        }
+        function saveBookedSlot(date, hour, userData) {
+            const slots = getBookedSlots();
+            if (!slots[date]) slots[date] = [];
+            slots[date].push({ hour: hour, user: userData });
+            localStorage.setItem('bookedSlots', JSON.stringify(slots));
+        }
+        function isSlotBooked(date, hour) {
+            const slots = getBookedSlots();
+            return slots[date] && slots[date].some(s => s.hour === hour);
+        }
+        function isDayBooked(date) {
+            const slots = getBookedSlots();
+            return slots[date] && slots[date].length === SLOT_COUNT;
+        }
+
+        // Schritt 1: Kontaktdaten
+        document.getElementById('userForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            // Validierung
+            const email = document.getElementById('email').value.trim();
+            const vorname = document.getElementById('vorname').value.trim();
+            const nachname = document.getElementById('nachname').value.trim();
+            const tel = document.getElementById('tel').value.trim();
+            let error = "";
+
+            if (!email || !vorname || !nachname || !tel) error = "Bitte alle Felder ausfüllen.";
+            else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) error = "Bitte geben Sie eine gültige E-Mail-Adresse ein.";
+            else if (!/^[a-zA-ZäöüÄÖÜß\- ]{2,}$/.test(vorname)) error = "Vorname ungültig.";
+            else if (!/^[a-zA-ZäöüÄÖÜß\- ]{2,}$/.test(nachname)) error = "Nachname ungültig.";
+            else if (!/^[0-9 +()-]{6,}$/.test(tel)) error = "Telefonnummer ungültig.";
+
+            if (error) {
+                document.getElementById('errorMsg').textContent = error;
+                document.getElementById('errorMsg').style.display = 'block';
+                return;
+            }
+            document.getElementById('errorMsg').style.display = 'none';
+
+            userData = { email, vorname, nachname, tel };
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
+        });
+
+        // Schritt 2: Datumsauswahl
+        let selectedDate = null;
+        const datepickerInstance = datepicker('#datepicker', {
+            id: 1,
+            minDate: new Date(),
+            maxDate: new Date(new Date().setMonth(new Date().getMonth() + 2)),
+            formatter: (input, date, instance) => {},
+            onSelect: (instance, date) => {
+                selectedDate = date.toISOString().split('T')[0];
+                document.getElementById('step3').style.display = 'block';
+                showSlots(selectedDate);
+            },
+            customDays: (date) => {
+                const dayStr = date.toISOString().split('T')[0];
+                if (isDayBooked(dayStr)) {
+                    return { disabled: true, className: 'datepicker__month-day--booked' };
+                }
+                if (date.getDay() === 0) {
+                    return { disabled: true, className: 'datepicker__month-day--disabled' };
+                }
+                return {};
+            }
+        });
+
+        // Schritt 3: Slot-Auswahl
+        function showSlots(dateStr) {
+            const slotsDiv = document.getElementById('slots');
+            slotsDiv.innerHTML = '';
+            for (let hour = WORK_START; hour <= WORK_END; hour++) {
+                let btn = document.createElement('button');
+                btn.className = 'slot';
+                btn.textContent = `${hour}:00 - ${hour+1}:00`;
+                if (isSlotBooked(dateStr, hour)) {
+                    btn.classList.add('booked');
+                    btn.disabled = true;
+                    btn.title = 'Bereits vergeben';
+                } else {
+                    btn.classList.add('available');
+                    btn.onclick = () => bookSlot(dateStr, hour);
+                }
+                slotsDiv.appendChild(btn);
+            }
+        }
+
+        // Slot buchen & Webhook aufrufen
+        function bookSlot(dateStr, hour) {
+            saveBookedSlot(dateStr, hour, userData);
+            showSlots(dateStr);
+            document.getElementById('confirmation').style.display = 'block';
+            document.getElementById('confirmation').textContent = 
+                `Ihr Termin am ${dateStr} um ${hour}:00 ist reserviert! Wir senden Ihnen eine Bestätigung per E-Mail.`;
+
+            // Webhook aufrufen (POST)
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    email: userData.email,
+                    vorname: userData.vorname,
+                    nachname: userData.nachname,
+                    tel: userData.tel,
+                    date: dateStr,
+                    hour: hour
+                })
+            });
+
+            setTimeout(() => {
+                document.getElementById('confirmation').style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
